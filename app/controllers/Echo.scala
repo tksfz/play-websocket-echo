@@ -4,15 +4,14 @@ import play.api._
 import play.api.mvc._
 import play.api.libs.iteratee._
 
-object Echo {
+object Echo extends Controller {
 
   def simpleIterateeWebSocket = WebSocket.using[String] {
     requestHeader =>
       val out = Enumerator.imperative[String]()
-      // note you can't call out.push here yet
       val in = Iteratee.foreach[String] {
-        event =>
-          out.push(event)
+        msg =>
+          out.push(msg)
       }
       (in, out)
   }
@@ -23,10 +22,9 @@ object Echo {
   def simpleAsyncWebSocket = WebSocket.async[String] {
     requestHeader => Akka.future {
       val out = Enumerator.imperative[String]()
-      // note you can't call out.push here yet
       val in = Iteratee.foreach[String] {
-        event =>
-          out.push(event)
+        msg =>
+          out.push(msg)
       }
       (in, out)
     }
@@ -36,11 +34,8 @@ object Echo {
 import play.api.libs.concurrent._
 import akka.actor._
 import play.api.Play.current // needed for Akka.system
-import akka.util.duration._
 
 object EchoWithActors {
-  
-  implicit val timeout = akka.util.Timeout(1 second)
   
   def naiveActorWebSocket = WebSocket.using[String] {
     requestHeader =>
@@ -48,13 +43,16 @@ object EchoWithActors {
       val out = Enumerator.imperative[String]()
       actor ! NaiveStart(out)
       val in = Iteratee.foreach[String] {
-        event =>
-          actor ! Message(event)
+        msg =>
+          actor ! Message(msg)
       }
       (in, out)
   }
   
   import akka.pattern.ask
+  import akka.util.duration._
+  
+  implicit val timeout = akka.util.Timeout(1 second)
   
   def actorWebSocket = WebSocket.async[String] {
     requestHeader =>
@@ -62,7 +60,7 @@ object EchoWithActors {
       (actor ? Start()).asPromise map {
         case Connected(out) =>
           val in = Iteratee.foreach[String] {
-            event => actor ! Message(event)
+            msg => actor ! Message(msg)
           }
           (in, out)
       }
@@ -71,9 +69,9 @@ object EchoWithActors {
 
 // Actor messages
 case class NaiveStart(out: PushEnumerator[String])
+case class Message(msg: String)
 case class Start()
 case class Connected(out: PushEnumerator[String])
-case class Message(msg: String)
 
 class NaiveEchoActor extends Actor {
   var out: PushEnumerator[String] = _
